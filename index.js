@@ -62,4 +62,4 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 8000;
 const HOST = "0.0.0.0"; // 👈 important for Railway
-server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));.listen(PORT, () => console.log(`Server running on ${PORT}`));
+server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));
