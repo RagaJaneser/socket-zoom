@@ -7,70 +7,59 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "*" }, // ⚠️ restrict in production
+  cors: { origin: "*" },
 });
 
 app.use(bodyParser.json());
 
-// Mappings
-const emailToSocketMapping = new Map(); // email -> socketId
-const socketIdToEmailMapping = new Map(); // socketId -> email
+const emailToSocketMapping = new Map();
+const socketIdToEmailMapping = new Map();
 
 io.on("connection", (socket) => {
-  console.log("New connection:", socket.id);
+  console.log("New Connection..");
 
-  // When a user joins a room
-  socket.on("join-room", ({ roomId, emailId }) => {
-    if (!roomId || !emailId) return;
-    console.log("User", emailId, "joined room", roomId);
-
+  socket.on("join-room", (data) => {
+    const { roomId, emailId } = data;
+    console.log("User", emailId, "Joined Room", roomId);
     emailToSocketMapping.set(emailId, socket.id);
     socketIdToEmailMapping.set(socket.id, emailId);
 
     socket.join(roomId);
-
-    // Tell the joiner they joined successfully
     socket.emit("joined-room", { roomId });
-
-    // Tell others in the room about the new user
-    socket.to(roomId).emit("user-joined", { emailId });
+    socket.broadcast.to(roomId).emit("user-joined", { emailId });
   });
 
-  // When a user calls another
-  socket.on("call-user", ({ to, from, offer }) => {
-    const targetSocketId = emailToSocketMapping.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("incomming-call", { from, offer });
-    }
+  socket.on("call-user", (data) => {
+    const { emailId, offer } = data;
+    const fromEmail = socketIdToEmailMapping.get(socket.id);
+    const socketId = emailToSocketMapping.get(emailId);
+    socket.to(socketId).emit("incomming-call", { from: fromEmail, offer });
   });
 
-  // When a call is accepted
-  socket.on("call-accepted", ({ to, from, ans }) => {
-    const targetSocketId = emailToSocketMapping.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-accepted", { from, ans });
-    }
+  socket.on("call-accepted", (data) => {
+    const { emailId, ans } = data;
+    const socketId = emailToSocketMapping.get(emailId);
+    socket.to(socketId).emit("call-accepted", { ans });
   });
 
-  // When sending ICE candidate
-  socket.on("ice-candidate", ({ to, from, candidate }) => {
-    const targetSocketId = emailToSocketMapping.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("ice-candidate", { from, candidate });
-    }
+  // 🔥 NEW: Forward ICE candidates
+  socket.on("ice-candidate", (data) => {
+    const { roomId, candidate } = data;
+    console.log("Forwarding ICE candidate:", candidate);
+
+    socket.broadcast.to(roomId).emit("ice-candidate", {
+      candidate,
+    });
   });
 
-  // Handle disconnect
   socket.on("disconnect", () => {
     const email = socketIdToEmailMapping.get(socket.id);
-    console.log("User disconnected:", email);
-
     emailToSocketMapping.delete(email);
     socketIdToEmailMapping.delete(socket.id);
+    console.log("User disconnected:", email);
   });
 });
 
-// 🚀 Start server
 const PORT = process.env.PORT || 8000;
-const HOST = "0.0.0.0"; // needed for Railway/Heroku
-server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));
+const HOST = "0.0.0.0"; // 👈 important for Railway
+server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));.listen(PORT, () => console.log(`Server running on ${PORT}`));
