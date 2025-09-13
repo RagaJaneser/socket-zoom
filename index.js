@@ -12,15 +12,12 @@ const io = new Server(server, {
 
 app.use(bodyParser.json());
 
-// Maintain participants per room
-const rooms = new Map(); // roomId => Set of emails
 const emailToSocketMapping = new Map();
 const socketIdToEmailMapping = new Map();
 
 io.on("connection", (socket) => {
   console.log("New Connection..");
 
-  // Join room
   socket.on("join-room", (data) => {
     const { roomId, emailId } = data;
     console.log("User", emailId, "Joined Room", roomId);
@@ -28,64 +25,60 @@ io.on("connection", (socket) => {
     emailToSocketMapping.set(emailId, socket.id);
     socketIdToEmailMapping.set(socket.id, emailId);
 
-    // Add participant to room
-    if (!rooms.has(roomId)) rooms.set(roomId, new Set());
-    rooms.get(roomId).add(emailId);
-
+    // Join the room
     socket.join(roomId);
 
-    // Notify this user of the room participants
-    const participants = Array.from(rooms.get(roomId)).filter((e) => e !== emailId);
-    socket.emit("joined-room", { roomId, participants });
+    // Send existing participants to the new user
+    const participants = [];
+    for (const [email, id] of emailToSocketMapping) {
+      if (id !== socket.id) participants.push(email);
+    }
+    socket.emit("all-users", { participants });
 
-    // Notify others in the room that a new user joined
+    // Notify others about the new user
     socket.broadcast.to(roomId).emit("user-joined", { emailId });
   });
 
-  // Call user
+  // Handle call offer
   socket.on("call-user", (data) => {
     const { emailId, offer } = data;
     const fromEmail = socketIdToEmailMapping.get(socket.id);
     const socketId = emailToSocketMapping.get(emailId);
-    if (socketId) {
-      socket.to(socketId).emit("incomming-call", { from: fromEmail, offer });
-    }
+    socket.to(socketId).emit("incoming-call", { from: fromEmail, offer });
   });
 
-  // Call accepted
+  // Handle call answer
   socket.on("call-accepted", (data) => {
     const { emailId, ans } = data;
     const socketId = emailToSocketMapping.get(emailId);
-    if (socketId) {
-      socket.to(socketId).emit("call-accepted", { ans });
+    socket.to(socketId).emit("call-accepted", { ans });
+  });
+
+  // Forward ICE candidates
+  socket.on("ice-candidate", (data) => {
+    const { roomId, candidate, toEmail } = data;
+    if (toEmail) {
+      const socketId = emailToSocketMapping.get(toEmail);
+      socket.to(socketId).emit("ice-candidate", { candidate });
+    } else {
+      socket.broadcast.to(roomId).emit("ice-candidate", { candidate });
     }
   });
 
-  // ICE candidates
-  socket.on("ice-candidate", (data) => {
-    const { roomId, candidate } = data;
-    // Forward candidate to all other participants
-    socket.broadcast.to(roomId).emit("ice-candidate", {
-      candidate,
-      from: socketIdToEmailMapping.get(socket.id),
-    });
-  });
-
-  // Disconnect
+  // Handle disconnect
   socket.on("disconnect", () => {
     const email = socketIdToEmailMapping.get(socket.id);
 
-    // Remove user from room
-    for (const [roomId, participants] of rooms) {
-      if (participants.has(email)) {
-        participants.delete(email);
-        // Notify remaining participants
-        socket.broadcast.to(roomId).emit("user-left", { emailId: email });
-      }
-    }
-
+    // Remove mappings
     emailToSocketMapping.delete(email);
     socketIdToEmailMapping.delete(socket.id);
+
+    // Notify all rooms that this user left
+    const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
+    rooms.forEach((roomId) => {
+      socket.broadcast.to(roomId).emit("user-left", { emailId: email });
+    });
+
     console.log("User disconnected:", email);
   });
 });
