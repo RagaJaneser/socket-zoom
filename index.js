@@ -60,6 +60,5 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 8000;
-const HOST = "0.0.0.0"; // 👈 important for Railway
-server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));
+const PORT = process.env.PORT || 8080;   // 👈 use 8080 fallback instead of 8000
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
