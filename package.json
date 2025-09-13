@@ -4,8 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+<<<<<<< HEAD
     "start": "node index.js",
     "dev": "nodemon index.js"
+=======
+    "start": "nodemon index.js"
+>>>>>>> e440d61 (file)
   },
   "author": "",
   "license": "ISC",
