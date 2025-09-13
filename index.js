@@ -12,77 +12,78 @@ const io = new Server(server, {
 
 app.use(bodyParser.json());
 
-const emailToSocketMapping = new Map();
+// Track room participants
+const rooms = new Map(); // roomId -> Set of emails
+const emailToSocketMapping = new Map(); 
 const socketIdToEmailMapping = new Map();
 
 io.on("connection", (socket) => {
-  console.log("New Connection..");
+  console.log("New Connection:", socket.id);
 
-  socket.on("join-room", (data) => {
-    const { roomId, emailId } = data;
-    console.log("User", emailId, "Joined Room", roomId);
-
+  socket.on("join-room", ({ roomId, emailId }) => {
+    console.log(`${emailId} joined room ${roomId}`);
+    
     emailToSocketMapping.set(emailId, socket.id);
     socketIdToEmailMapping.set(socket.id, emailId);
 
-    // Join the room
+    if (!rooms.has(roomId)) rooms.set(roomId, new Set());
+    const participants = rooms.get(roomId);
+    participants.add(emailId);
+
     socket.join(roomId);
 
-    // Send existing participants to the new user
-    const participants = [];
-    for (const [email, id] of emailToSocketMapping) {
-      if (id !== socket.id) participants.push(email);
-    }
-    socket.emit("all-users", { participants });
+    // Notify the joining user about existing participants
+    const otherParticipants = Array.from(participants).filter(e => e !== emailId);
+    socket.emit("room-participants", { participants: otherParticipants });
 
-    // Notify others about the new user
+    // Notify all others that a new user joined
     socket.broadcast.to(roomId).emit("user-joined", { emailId });
   });
 
-  // Handle call offer
-  socket.on("call-user", (data) => {
-    const { emailId, offer } = data;
+  socket.on("call-user", ({ to, offer }) => {
+    const socketId = emailToSocketMapping.get(to);
     const fromEmail = socketIdToEmailMapping.get(socket.id);
-    const socketId = emailToSocketMapping.get(emailId);
-    socket.to(socketId).emit("incoming-call", { from: fromEmail, offer });
-  });
-
-  // Handle call answer
-  socket.on("call-accepted", (data) => {
-    const { emailId, ans } = data;
-    const socketId = emailToSocketMapping.get(emailId);
-    socket.to(socketId).emit("call-accepted", { ans });
-  });
-
-  // Forward ICE candidates
-  socket.on("ice-candidate", (data) => {
-    const { roomId, candidate, toEmail } = data;
-    if (toEmail) {
-      const socketId = emailToSocketMapping.get(toEmail);
-      socket.to(socketId).emit("ice-candidate", { candidate });
-    } else {
-      socket.broadcast.to(roomId).emit("ice-candidate", { candidate });
+    if (socketId) {
+      socket.to(socketId).emit("incomming-call", { from: fromEmail, offer });
     }
   });
 
-  // Handle disconnect
+  socket.on("call-accepted", ({ to, answer }) => {
+    const socketId = emailToSocketMapping.get(to);
+    if (socketId) {
+      socket.to(socketId).emit("call-accepted", { answer });
+    }
+  });
+
+  socket.on("ice-candidate", ({ to, candidate }) => {
+    const socketId = emailToSocketMapping.get(to);
+    if (socketId) {
+      socket.to(socketId).emit("ice-candidate", { candidate });
+    }
+  });
+
   socket.on("disconnect", () => {
     const email = socketIdToEmailMapping.get(socket.id);
+    if (!email) return;
 
-    // Remove mappings
+    console.log("Disconnected:", email);
+
     emailToSocketMapping.delete(email);
     socketIdToEmailMapping.delete(socket.id);
 
-    // Notify all rooms that this user left
-    const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
-    rooms.forEach((roomId) => {
-      socket.broadcast.to(roomId).emit("user-left", { emailId: email });
+    // Remove from all rooms
+    rooms.forEach((participants, roomId) => {
+      if (participants.has(email)) {
+        participants.delete(email);
+        socket.broadcast.to(roomId).emit("user-left", { emailId: email });
+      }
     });
-
-    console.log("User disconnected:", email);
   });
 });
 
 const PORT = process.env.PORT || 8000;
 const HOST = "0.0.0.0";
-server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));
+
+server.listen(PORT, HOST, () => {
+  console.log(`Server running on ${PORT}`);
+});
