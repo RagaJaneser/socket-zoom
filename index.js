@@ -38,28 +38,47 @@ io.on("connection", (socket) => {
 
   socket.on("call-accepted", (data) => {
     const { emailId, ans } = data;
+    const fromEmail = socketIdToEmailMapping.get(socket.id);
     const socketId = emailToSocketMapping.get(emailId);
-    socket.to(socketId).emit("call-accepted", { ans });
+    socket.to(socketId).emit("call-accepted", { from: fromEmail, ans });
   });
 
-  // 🔥 NEW: Forward ICE candidates
   socket.on("ice-candidate", (data) => {
-    const { roomId, candidate } = data;
-    console.log("Forwarding ICE candidate:", candidate);
-
-    socket.broadcast.to(roomId).emit("ice-candidate", {
-      candidate,
-    });
+    const { roomId, candidate, to } = data;
+    const fromEmail = socketIdToEmailMapping.get(socket.id);
+    
+    if (to) {
+      // Targeted ICE candidate
+      const socketId = emailToSocketMapping.get(to);
+      if (socketId) {
+        socket.to(socketId).emit("ice-candidate", { from: fromEmail, candidate });
+      }
+    } else {
+      // Fallback: broadcast to room
+      socket.broadcast.to(roomId).emit("ice-candidate", { from: fromEmail, candidate });
+    }
   });
 
   socket.on("disconnect", () => {
     const email = socketIdToEmailMapping.get(socket.id);
-    emailToSocketMapping.delete(email);
-    socketIdToEmailMapping.delete(socket.id);
-    console.log("User disconnected:", email);
+    if (email) {
+      // Get all rooms this socket was in
+      const rooms = Array.from(socket.rooms);
+      
+      // Notify others in each room that user left
+      rooms.forEach(roomId => {
+        if (roomId !== socket.id) { // Skip the socket's own room
+          socket.broadcast.to(roomId).emit("user-left", { emailId: email });
+        }
+      });
+      
+      emailToSocketMapping.delete(email);
+      socketIdToEmailMapping.delete(socket.id);
+      console.log("User disconnected:", email);
+    }
   });
 });
 
 const PORT = process.env.PORT || 8000;
-const HOST = "0.0.0.0"; // 👈 important for Railway
+const HOST = "0.0.0.0";
 server.listen(PORT, HOST, () => console.log(`Server running on ${PORT}`));
