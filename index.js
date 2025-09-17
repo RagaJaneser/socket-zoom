@@ -40,7 +40,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call-accepted", (data) => {
-    const { to, ans } = data; // ✅ FIXED
+    const { to, ans } = data; // ✅ fixed
     const fromEmail = socketIdToEmailMapping.get(socket.id);
     const socketId = emailToSocketMapping.get(to);
     if (socketId) {
@@ -52,7 +52,10 @@ io.on("connection", (socket) => {
     const { roomId, candidate, to } = data;
     const fromEmail = socketIdToEmailMapping.get(socket.id);
 
-    if (!fromEmail) return;
+    if (!fromEmail) {
+      console.warn("ICE candidate from unknown socket:", socket.id, data);
+      return;
+    }
 
     if (to) {
       const socketId = emailToSocketMapping.get(to);
@@ -62,6 +65,7 @@ io.on("connection", (socket) => {
     } else {
       socket.broadcast.to(roomId).emit("ice-candidate", { from: fromEmail, candidate });
     }
+    console.log("ICE from:", fromEmail, "to:", to, "candidate:", !!candidate);
   });
 
   socket.on("disconnect", () => {
