@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -17,23 +16,20 @@ const emailToSocketMapping = new Map();
 const socketIdToEmailMapping = new Map();
 
 io.on("connection", (socket) => {
-  console.log("New Connection..", socket.id);
+  console.log("New Connection:", socket.id);
 
-  // ✅ Join Room
   socket.on("join-room", (data) => {
     const { roomId, emailId } = data;
-    console.log("User", emailId, "Joined Room", roomId);
+    console.log("User", emailId, "joined room", roomId);
 
     emailToSocketMapping.set(emailId, socket.id);
     socketIdToEmailMapping.set(socket.id, emailId);
 
     socket.join(roomId);
-
     socket.emit("joined-room", { roomId });
     socket.broadcast.to(roomId).emit("user-joined", { emailId });
   });
 
-  // ✅ Call User
   socket.on("call-user", (data) => {
     const { emailId, offer } = data;
     const fromEmail = socketIdToEmailMapping.get(socket.id);
@@ -43,9 +39,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ Accept Call
   socket.on("call-accepted", (data) => {
-    const { to, ans } = data;
+    const { to, ans } = data; // ✅ FIXED
     const fromEmail = socketIdToEmailMapping.get(socket.id);
     const socketId = emailToSocketMapping.get(to);
     if (socketId) {
@@ -53,15 +48,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ ICE Candidate
   socket.on("ice-candidate", (data) => {
     const { roomId, candidate, to } = data;
     const fromEmail = socketIdToEmailMapping.get(socket.id);
 
-    if (!fromEmail) {
-      console.warn("ICE candidate from unknown user:", socket.id);
-      return;
-    }
+    if (!fromEmail) return;
 
     if (to) {
       const socketId = emailToSocketMapping.get(to);
@@ -73,7 +64,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ Disconnect
   socket.on("disconnect", () => {
     const email = socketIdToEmailMapping.get(socket.id);
     if (email) {
@@ -83,7 +73,6 @@ io.on("connection", (socket) => {
           socket.broadcast.to(roomId).emit("user-left", { emailId: email });
         }
       });
-
       emailToSocketMapping.delete(email);
       socketIdToEmailMapping.delete(socket.id);
       console.log("User disconnected:", email);
@@ -92,4 +81,4 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 8000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
